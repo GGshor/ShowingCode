@@ -130,7 +130,7 @@ end
 function TweenModel:Play()
 	
 	if TweenModel.easingStyle then
-		warn("Please update your code! I have updated the module, please read the examples.")
+		warn("The module got updated! Please update your code.")
 		return
 	end
 	
