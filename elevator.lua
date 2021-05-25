@@ -12,12 +12,7 @@ local module = {
 		-- 4 = Friends cannot join games with Cobalt
 		
 		local blacklist = {
-			[313507603] = 0, -- EVMania_1stYT
-			[370005137] = 1, -- RICHROBLOxD
-			[50361271]  = 1, -- meowmix109
-			[60462577]  = 2, -- liftec45
-			[91315499]  = 3, -- wrickedfob
-			[101583234] = 2, -- Simi001
+            -- [UserId] = level
 		}
 		game.Players.PlayerAdded:connect(function(player)
 			if blacklist[player.UserId] then
