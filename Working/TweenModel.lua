@@ -83,20 +83,28 @@ end
 function TweenModel:PlayInstant(Model,Goal,Duration,Style,Direction,Repeat,Reverses,Delay)
 	warn("\n-------------------------\n\nDeprecated method of using TweenModule detected, please update your code!\n\nBackwards compatibility may NOT work with your code!\n\n-------------------------")
 
-	local info = TweenInfo.new(
-		Duration,
-		Style,
-		Direction,
-		Repeat,
-		Reverses,
-		Delay
-	)
+	if Duration == nil then
+		Duration = 1
+	end
+	if Style == nil then
+		Style = Enum.EasingStyle.Quad
+	end
+	if Direction == nil then
+		Direction = Enum.EasingDirection.Out
+	end
+	if Repeat == nil then
+		Repeat = 0
+	end
+	if Reverses == nil then
+		Reverses = false
+	end
+	if Delay == nil then
+		Delay = 0
+	end
+	
+	local info = TweenInfo.new(Duration,Style,Direction,Repeat,Reverses,Delay)
 
-	local tween = TweenModel.new(
-		Model,
-		info,
-		Goal.CFrame
-	):Play()
+	TweenModel.new(Model,info,Goal.CFrame):Play()
 
 end
 
