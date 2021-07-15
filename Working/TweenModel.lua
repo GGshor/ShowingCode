@@ -17,7 +17,7 @@ local TweenModel = require(6019253834) -- Get the module. Use id to get most upd
 
 local Tween = TweenModel.new( -- Creates a new tween
 	script.Parent.Door, -- Which model should be moved. (SET THE PRIMARYPART, to something in the middle or something)
-	tweeninfo.new(
+	TweenInfo.new(
 		5, -- Amount of seconds it take. (Default = 1)
 		Enum.EasingStyle.Linear, -- Style of tween. (Default = TweenModel.TypeStyles.Quad)
 		Enum.EasingDirection.Out, -- Type of direction. (Default = TweenModel.TypeDirections.Out)
