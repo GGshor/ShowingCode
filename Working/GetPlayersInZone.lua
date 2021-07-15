@@ -1,4 +1,5 @@
 local mod = {}
+
 function mod:GetPlayers(zone)
 	local Catched = {}
 	
@@ -25,4 +26,5 @@ function mod:GetPlayers(zone)
 	end
 	return Catched
 end
+
 return mod
