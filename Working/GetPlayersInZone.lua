@@ -2,20 +2,17 @@ local mod = {}
 
 function mod:GetPlayers(zone)
 	local Catched = {}
-	
+
 	local function isInsideBrick(root,part) -- Making function to get root and part
-		local function GetTouchingParts(part)
-			local connection = part.Touched:Connect(function() end)
-			local results = part:GetTouchingParts()
-			connection:Disconnect()
-			return results
-		end
-		local results = GetTouchingParts(part)
+		local connection = part.Touched:Connect(function() end)
+		local results = part:GetTouchingParts()
+		connection:Disconnect()
 		for i,v in pairs(results) do
 			if v == root then
 				return true
 			end
 		end
+		return false -- Always return false
 	end
 
 	for _, player in ipairs(game:GetService("Players"):GetPlayers()) do -- Gets all players
