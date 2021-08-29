@@ -1,4 +1,4 @@
-local mod = {}
+local GetPlayersInZone = {}
 
 local function isInsideBrick(root,part) -- Making function to get root and part
 	local function GetTouchingParts(part)
@@ -23,7 +23,7 @@ local function isInsideBrick(root,part) -- Making function to get root and part
 	end
 end
 
-function mod:GetPlayers(zone)
+function GetPlayersInZone:GetPlayers(zone)
 	local Catched = {}
 
 	for _, player in ipairs(game:GetService("Players"):GetPlayers()) do -- Gets all players
@@ -35,7 +35,7 @@ function mod:GetPlayers(zone)
 	return Catched
 end
 
-function mod:IsInZone(player, zone)
+function GetPlayersInZone:IsInZone(player, zone)
 	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") -- Gets player character and checks if loaded
 	if (hrp and isInsideBrick(player.Character.HumanoidRootPart,zone)) then -- Checks if players is inside the zone
 		return true
