@@ -2,7 +2,7 @@
 
 Working:
 * [Model Tween](https://www.roblox.com/library/6019253834/Tween-Model)
-* GetPlayersInZone
+* [GetPlayersInZone](https://www.roblox.com/library/7358388819/GetPlayersInZone)
 
 May Not Work
 * Kohl mainmodule
