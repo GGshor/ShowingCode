@@ -44,4 +44,4 @@ function GetPlayersInZone:IsInZone(player, zone)
 	end
 end
 
-return mod
+return GetPlayersInZone
