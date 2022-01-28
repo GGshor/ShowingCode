@@ -1,47 +1,58 @@
-local GetPlayersInZone = {}
+--[[
+	@GGshor
+	Gets players touching a part.
+--]]
 
-local function isInsideBrick(root,part) -- Making function to get root and part
-	local function GetTouchingParts(part)
-		local notEnabled = false
-		if part.CanTouch == false then
-			notEnabled = true
-			part.CanTouch = true
-		end
-		local connection = part.Touched:Connect(function() end)
-		local results = part:GetTouchingParts()
-		connection:Disconnect()
-		if notEnabled then
-			part.CanTouch = false
-		end
-		return results
-	end
-	local results = GetTouchingParts(part)
-	for i,v in pairs(results) do
-		if v == root then
-			return true
-		end
-	end
+
+--// Services
+local Players = game:GetService("Players")
+
+
+--[[
+TheNexusAvenger
+
+Determines if a CFrame is in a part.
+--]]
+function isCFrameInPart(Part: BasePart, TestCFrame: CFrame)
+	local RelativePosition = Part.CFrame:Inverse() * TestCFrame
+	local Size = Part.Size
+	return math.abs(RelativePosition.X) <= Size.X / 2 and math.abs(RelativePosition.Y) <= Size.Y / 2 and math.abs(RelativePosition.Z) <= Size.Z / 2
 end
 
-function GetPlayersInZone:GetPlayers(zone)
-	local Catched = {}
 
-	for _, player in ipairs(game:GetService("Players"):GetPlayers()) do -- Gets all players
-		local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") -- Gets player character and checks if loaded
-		if (hrp and isInsideBrick(player.Character.HumanoidRootPart,zone)) then -- Checks if players is inside the zone
-			table.insert(Catched,player)
+--// Module return
+--[[
+	Returns table with players, if none are found returns false
+--]]
+return function(part: BasePart, timeout: number?): {Player}
+	local found: {Player} = {} -- Table for the players found
+
+	if timeout <= 1 then -- Just a check to make sure that the timeOut can't be 0 or less.
+		timeout = false
+	end
+
+	if timeout then -- If there is a timeout use waitforchild
+		for _, player: Player in pairs(Players:GetPlayers()) do
+			task.spawn(function()
+				if player.Character and player.Character:WaitForChild("HumanoidRootPart", (timeout - 1)) then					
+					if isCFrameInPart(part, player.Character.HumanoidRootPart.CFrame) then
+						table.insert(found, player)
+					end
+				end
+			end)
+		end
+
+		task.wait(timeout)
+
+	else -- Else just don't use waitforchild
+		for _, player: Player in pairs(Players:GetPlayers()) do
+			if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+				if isCFrameInPart(part, player.Character.HumanoidRootPart.CFrame) then
+					table.insert(found, player)
+				end
+			end
 		end
 	end
-	return Catched
-end
 
-function GetPlayersInZone:IsInZone(player, zone)
-	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") -- Gets player character and checks if loaded
-	if (hrp and isInsideBrick(player.Character.HumanoidRootPart,zone)) then -- Checks if players is inside the zone
-		return true
-	else
-		return false
-	end
+	return found
 end
-
-return GetPlayersInZone
