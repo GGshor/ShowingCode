@@ -1,6 +1,10 @@
 --[[
 	@GGshor
 	Gets players touching a part.
+
+	Credits:
+	@TheNexusAvenger
+	For the CFrame in part function.
 --]]
 
 
