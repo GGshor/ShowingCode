@@ -30,16 +30,17 @@ end
 --]]
 return function(part: BasePart, timeout: number?): {Player}
 	local found: {Player} = {} -- Table for the players found
-
-	if timeout <= 1 then -- Just a check to make sure that the timeOut can't be 0 or less.
-		timeout = false
+	local useTimeout = false
+	
+	if typeof(timeout) == "number" and timeout > 1 then -- Just a check to make sure that the timeOut can't be 0 or less.
+		useTimeout = true
 	end
 
-	if timeout then -- If there is a timeout use waitforchild
+	if useTimeout then -- If there is a timeout use waitforchild
 		for _, player: Player in pairs(Players:GetPlayers()) do
 			task.spawn(function()
 				if player.Character and player.Character:WaitForChild("HumanoidRootPart", (timeout - 1)) then					
-					if isCFrameInPart(part, player.Character.HumanoidRootPart.CFrame) then
+					if isCFrameInPart(part, player.Character:GetPrimaryPartCFrame()) then
 						table.insert(found, player)
 					end
 				end
@@ -51,7 +52,7 @@ return function(part: BasePart, timeout: number?): {Player}
 	else -- Else just don't use waitforchild
 		for _, player: Player in pairs(Players:GetPlayers()) do
 			if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-				if isCFrameInPart(part, player.Character.HumanoidRootPart.CFrame) then
+				if isCFrameInPart(part, player.Character:GetPrimaryPartCFrame()) then
 					table.insert(found, player)
 				end
 			end
