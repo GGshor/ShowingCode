@@ -5,34 +5,34 @@
 
 	-- Server API
 
-	Network:BindFunctions(functions)
-	Network:BindEvents(events)
+	Grid:BindFunctions(functions)
+	Grid:BindEvents(events)
 
-	Network:FireClient(client, name, ...)
-	Network:FireAllClients(name, ...)
-	Network:FireOtherClients(ignoreclient, name, ...)
-	Network:FireOtherClientsWithinDistance(ignoreclient, distance, name, ...)
-	Network:FireAllClientsWithinDistance(position, distance, name, ...)
+	Grid:FireClient(client, name, ...)
+	Grid:FireAllClients(name, ...)
+	Grid:FireOtherClients(ignoreclient, name, ...)
+	Grid:FireOtherClientsWithinDistance(ignoreclient, distance, name, ...)
+	Grid:FireAllClientsWithinDistance(position, distance, name, ...)
 
-	Network:InvokeClient(client, name, ...)  (same as below with timeout = 60)
-	Network:InvokeClientWithTimeout(timeout, client, name, ...)
+	Grid:InvokeClient(client, name, ...)  (same as below with timeout = 60)
+	Grid:InvokeClientWithTimeout(timeout, client, name, ...)
 
-	Network:LogTraffic(duration)
+	Grid:LogTraffic(duration)
 
 	-- Internal overrideable methods, used for custom AllClients/OtherClients/WithinDistance selectors
 
-	Network:GetPlayers()
-	Network:GetPlayerPosition(player)
+	Grid:GetPlayers()
+	Grid:GetPlayerPosition(player)
 
 	-- Client API
 
-	Network:BindFunctions(functions)
-	Network:BindEvents(events)
+	Grid:BindFunctions(functions)
+	Grid:BindEvents(events)
 
-	Network:FireServer(name, ...)
+	Grid:FireServer(name, ...)
 
-	Network:InvokeServer(name, ...)
-	Network:InvokeServerWithTimeout(timeout, name, ...)
+	Grid:InvokeServer(name, ...)
+	Grid:InvokeServerWithTimeout(timeout, name, ...)
 
 
 
@@ -47,12 +47,14 @@
 --]]
 
 
-local Network = {}
-
+--// Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 
+
+--// Constants
+local Grid = {}
 local EventHandlers = {}
 local FunctionHandlers = {}
 local Bindables = {}
@@ -592,7 +594,7 @@ function combineFn(handler, final, ...)
 	return NetworkHandler
 end
 
-function Network:BindEvents(pre: table?, callbacks: table)
+function Grid:BindEvents(pre: table?, callbacks: table)
 	if typeof(pre) == "table" then
 		pre, callbacks = nil, pre
 	end
@@ -619,7 +621,7 @@ function Network:BindEvents(pre: table?, callbacks: table)
 	ExecuteDeferredHandlers()
 end
 
-function Network:BindFunctions(pre: table?, callbacks: table)
+function Grid:BindFunctions(pre: table?, callbacks: table)
 	if typeof(pre) == "table" then
 		pre, callbacks = nil, pre
 	end
@@ -664,17 +666,17 @@ if IsServer then
 
 	--
 
-	function Network:GetPlayers()
+	function Grid:GetPlayers()
 		return Players:GetPlayers()
 	end
 
-	function Network:GetPlayerPosition(player)
+	function Grid:GetPlayerPosition(player)
 		return player and player.Character and player.Character.PrimaryPart and player.Character.PrimaryPart.Position or nil
 	end
 
 	--
 
-	function Network:FireClient(client, name, ...)
+	function Grid:FireClient(client, name, ...)
 		local handler = GetEventHandler(name)
 		if not handler then
 			error(("'%s' is not a valid RemoteEvent"):format(name))
@@ -683,7 +685,7 @@ if IsServer then
 		HandlerFireClient(handler, client, ...)
 	end
 
-	function Network:FireAllClients(name, ...)
+	function Grid:FireAllClients(name, ...)
 		local handler = GetEventHandler(name)
 		if not handler then
 			error(("'%s' is not a valid RemoteEvent"):format(name))
@@ -694,7 +696,7 @@ if IsServer then
 		end
 	end
 
-	function Network:FireOtherClients(client, name, ...)
+	function Grid:FireOtherClients(client, name, ...)
 		local handler = GetEventHandler(name)
 		if not handler then
 			error(("'%s' is not a valid RemoteEvent"):format(name))
@@ -707,7 +709,7 @@ if IsServer then
 		end
 	end
 
-	function Network:FireOtherClientsWithinDistance(client, dist, name, ...)
+	function Grid:FireOtherClientsWithinDistance(client, dist, name, ...)
 		local handler = GetEventHandler(name)
 		if not handler then
 			error(("'%s' is not a valid RemoteEvent"):format(name))
@@ -729,7 +731,7 @@ if IsServer then
 		end
 	end
 
-	function Network:FireAllClientsWithinDistance(pos, dist, name, ...)
+	function Grid:FireAllClientsWithinDistance(pos, dist, name, ...)
 		local handler = GetEventHandler(name)
 		if not handler then
 			error(("'%s' is not a valid RemoteEvent"):format(name))
@@ -744,7 +746,7 @@ if IsServer then
 		end
 	end
 
-	function Network:InvokeClientWithTimeout(timeout, client, name, ...)
+	function Grid:InvokeClientWithTimeout(timeout, client, name, ...)
 		local handler = GetEventHandler(name)
 		if not handler then
 			error(("'%s' is not a valid RemoteEvent"):format(name))
@@ -753,16 +755,16 @@ if IsServer then
 		return SafeInvoke(timeout, handler, client, ...)
 	end
 
-	function Network:InvokeClient(...)
+	function Grid:InvokeClient(...)
 		return self:InvokeClientWithTimeout(60, ...)
 	end
 
 
-	function Network:LogTraffic(...)
+	function Grid:LogTraffic(...)
 		task.spawn(self.LogTrafficAsync, self, ...)
 	end
 
-	function Network:LogTrafficAsync(duration, output)
+	function Grid:LogTrafficAsync(duration, output)
 		output = output or warn
 
 		if LoggingNetwork then return end
@@ -842,7 +844,7 @@ else
 
 	--
 
-	function Network:FireServer(name, ...)
+	function Grid:FireServer(name, ...)
 		local handler = GetEventHandler(name)
 		if not handler then
 			error(("'%s' is not a valid RemoteEvent"):format(name))
@@ -859,7 +861,7 @@ else
 		end
 	end
 
-	function Network:InvokeServerWithTimeout(timeout, name, ...)
+	function Grid:InvokeServerWithTimeout(timeout, name, ...)
 		local handler = GetFunctionHandler(name)
 		if not handler then
 			error(("'%s' is not a valid RemoteFunction"):format(name))
@@ -884,7 +886,7 @@ else
 		return unpack(result, 2)
 	end
 
-	function Network:InvokeServer(name, ...)
+	function Grid:InvokeServer(name, ...)
 		return self:InvokeServerWithTimeout(nil, name, ...)
 	end
 end
@@ -911,7 +913,7 @@ do
 		local valueType = typeof(value)
 
 		if not ValidTypes[valueType] then
-			error(string.format("Invalid value passed to Network:Pack (values of type %s are not supported)", valueType))
+			error(string.format("Invalid value passed to Grid:Pack (values of type %s are not supported)", valueType))
 		end
 
 		if valueType == "boolean" or valueType == "nil" or value == "" then
@@ -944,9 +946,9 @@ do
 			end
 
 			if IsServer then
-				Network:FireClient(client, "SetPackedValue", info.char, info.value)
+				Grid:FireClient(client, "SetPackedValue", info.char, info.value)
 			else
-				Network:FireServer("SetPackedValue", info.char, info.value)
+				Grid:FireServer("SetPackedValue", info.char, info.value)
 			end
 		end
 
@@ -970,17 +972,17 @@ do
 	end
 
 	if IsServer then
-		function Network:Pack(value, client)
+		function Grid:Pack(value, client)
 			assert(typeof(client) == "Instance" and client:IsA("Player"), "client is not a player")
 			return addEntry(value, client)
 		end
 
-		function Network:Unpack(value, client)
+		function Grid:Unpack(value, client)
 			assert(typeof(client) == "Instance" and client:IsA("Player"), "client is not a player")
 			return getEntry(value, client)
 		end
 
-		Network:BindEvents({
+		Grid:BindEvents({
 			SetPackedValue = function(client, char, value)
 				if typeof(char) ~= "string" or #char ~= 1 then
 					return client:Kick()
@@ -1000,15 +1002,15 @@ do
 			end
 		})
 	else
-		function Network:Pack(value)
+		function Grid:Pack(value)
 			return addEntry(value, "Server")
 		end
 
-		function Network:Unpack(value)
+		function Grid:Unpack(value)
 			return getEntry(value, "Server")
 		end
 
-		Network:BindEvents({
+		Grid:BindEvents({
 			SetPackedValue = function(char, value)
 				ReceivingCache.Server[string.byte(char)] = value
 			end
@@ -1032,7 +1034,7 @@ do
 		Objects[i] = {}
 	end
 
-	function Network:AddReference(key, refType, ...)
+	function Grid:AddReference(key, refType, ...)
 		local refInfo = ReferenceTypes[refType]
 		assert(refInfo, "Invalid Reference Type")
 
@@ -1055,7 +1057,7 @@ do
 		last.__Data = refData
 	end
 
-	function Network:AddReferenceAlias(key, refType, ...)
+	function Grid:AddReferenceAlias(key, refType, ...)
 		local refInfo = ReferenceTypes[refType]
 		assert(refInfo, "Invalid Reference Type")
 
@@ -1078,7 +1080,7 @@ do
 		last.__Data = refData
 	end
 
-	function Network:RemoveReference(key, refType)
+	function Grid:RemoveReference(key, refType)
 		local refInfo = ReferenceTypes[refType]
 		assert(refInfo, "Invalid Reference Type")
 
@@ -1113,7 +1115,7 @@ do
 		end
 	end
 
-	function Network:GetObject(ref, refType)
+	function Grid:GetObject(ref, refType)
 		assert(ReferenceTypes[refType], "Invalid Reference Type")
 
 		local refData = References[refType][ref]
@@ -1124,7 +1126,7 @@ do
 		return unpack(refData.Objects)
 	end
 
-	function Network:GetReference(...)
+	function Grid:GetReference(...)
 		local objects = {...}
 
 		local refType = table.remove(objects)
@@ -1146,4 +1148,4 @@ end
 
 --
 
-return Network
+return Grid
