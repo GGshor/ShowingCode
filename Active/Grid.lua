@@ -55,126 +55,139 @@ local Players = game:GetService("Players")
 
 --// Constants
 local Grid = {}
-local EventHandlers = {}
-local FunctionHandlers = {}
-local Bindables = {}
-
 local IsStudio = RunService:IsStudio()
 local IsServer = RunService:IsServer()
 local IsClient = RunService:IsClient()
+local YieldBindable = Instance.new("BindableEvent")
 
-local LoggingNetwork
-local function GetParamString(...: any)
-	local tab = table.pack(...)
-	local n = math.min(10, tab.n)
 
-	for index = 1, n do
-		local value = tab[index]
-		local valueType = typeof(tab[index])
+--// Variables
+local loggingNetwork: {} = nil
+local handlers = {
+	Events = {},
+	Functions = {},
+	Deferred = {}
+}
+local counters = {
+	Received = 0,
+	Invoked = 0
+}
+
+
+--// Local functions
+
+-- Gets all parameters from inserted arguments and transforms them into a single string.
+local function GetParamString(...: any): string
+	local packed = table.pack(...)
+	local minimum  = math.min(10, packed.n)
+
+	for index = 1, minimum do
+		local value = packed[index]
+		local valueType = typeof(packed[index])
 
 		if valueType == "string" then
-			tab[index] = string.format("%q[%d]", #value <= 18 and value or value:sub(1, 15) .. "...", #value)
+			packed[index] = string.format("%q[%d]", #value <= 18 and value or value:sub(1, 15) .. "...", #value)
 
 		elseif valueType == "Instance" then
 			local success, className = pcall(function()
 				return value.ClassName
 			end)
 
-			tab[index] = success and string.format("%s<%s>", valueType, className) or valueType
+			packed[index] = success and string.format("%s<%s>", valueType, className) or valueType
 
 		else
-			tab[index] = valueType
+			packed[index] = valueType
 		end
 	end
 
-	return table.concat(tab, ", ", 1, n) .. (tab.n > n and string.format(", ... (%d more)", tab.n - n) or "")
+	return table.concat(packed, ", ", 1, minimum ) .. (packed.n > minimum  and string.format(", ... (%d more)", packed.n - minimum ) or "")
 end
 
-local function BuildCommunication()
+-- Waits for communication folders to exist or creates them.
+-- @yields
+local function GetCommunications()
 	if IsServer then
-		if ReplicatedStorage:FindFirstChild("Communication") then
+		-- Stops duplicates and destroys them
+		if ReplicatedStorage:FindFirstChild("GridCommunications") then
 			ReplicatedStorage.Communication:Destroy()
 		end
-		--// Delete if old stuff is found
 
 		local CommunicationFolder = Instance.new("Folder")
-		CommunicationFolder.Name = "Communication"
+		CommunicationFolder.Name = "GridCommunications"
 
 		local FunctionsFolder = Instance.new("Folder")
 		FunctionsFolder.Name = "Functions"
-
 		local EventsFolder = Instance.new("Folder")
 		EventsFolder.Name = "Events"
-
 		local BindsFolder = Instance.new("Folder")
 		BindsFolder.Name = "Binds"
-		--// Create folders and name them
 
 		CommunicationFolder.Parent = ReplicatedStorage
 		FunctionsFolder.Parent = CommunicationFolder
 		EventsFolder.Parent = CommunicationFolder
 		BindsFolder.Parent = CommunicationFolder
-		--// Parent once all are created
 
-		return CommunicationFolder, FunctionsFolder, EventsFolder, BindsFolder
-		--// Return the folders once parented
+		return {
+			["Functions"] = FunctionsFolder,
+			["Events"] = EventsFolder,
+			["Binds"] = BindsFolder
+		}
 
 	elseif IsClient then
-		local CommunicationFolder = ReplicatedStorage:WaitForChild("Communication")
+		local CommunicationFolder = ReplicatedStorage:WaitForChild("GridCommunications")
 		local FunctionsFolder = CommunicationFolder:WaitForChild("Functions")
 		local EventsFolder = CommunicationFolder:WaitForChild("Events")
 		local BindsFolder = CommunicationFolder:WaitForChild("Binds")
-		--// Wait for folders to be created by server
 
-		return CommunicationFolder, FunctionsFolder, EventsFolder, BindsFolder
-		--// Return the folders once loaded
+		return {
+			["Functions"] = FunctionsFolder,
+			["Events"] = EventsFolder,
+			["Binds"] = BindsFolder
+		}
 	end
 end
 
-local DeferredHandlers = {}
 
-local ReceiveCounter = 0
-local InvokeCounter = 0
+--// Functions
 
-local Communication, FunctionsFolder, EventsFolder, BindsFolder = BuildCommunication()
+--[[
+	Yields a thread.
 
-local YieldBindable = Instance.new("BindableEvent")
-
---function FastSpawn(fn, ...)
-
---	coroutine.wrap(function(...)
---		SpawnBindable.Event:Wait()
---		fn(...)
---	end)(...)
-
---	SpawnBindable:Fire()
---end
-
-function YieldThread()
+	@yields
+]]
+function YieldThread(): any
 	-- needed a way to first call coroutine.yield(), and then call YieldBindable.Event:Wait()
 	-- but return what coroutine.yield() returned. This is kinda ugly, but the only other
 	-- option was to create a temporary table to store the results, which I didn't want to do
 
-	return (function(...) YieldBindable.Event:Wait() return ... end)(coroutine.yield())
+	return (function(...)
+		YieldBindable.Event:Wait()
+		return ...
+	end)(coroutine.yield())
 end
 
-function ResumeThread(thread: thread, ...: any)
+-- Resumes a thread and passes any given arguments.
+function ResumeThread(thread: thread, ...: any?)
 	coroutine.resume(thread, ...)
 	YieldBindable:Fire()
 end
 
---// Thread utilities
+--[[
+	Calls callback(...) in a separate thread and returns false if it errors or invoking client leaves the game.
 
--- Calls fn(...) in a separate thread and returns false if it errors or invoking client leaves the game.
--- Fail state is only checked every 0.5 seconds, so don't expect errors to return immediately
-function SafeInvokeCallback(handler: table, ...: any)
+	Fail state is only checked every 0.5 seconds, so don't expect errors to return immediately
+
+	@yields
+]]
+function SafeInvokeCallback(handler: table, ...: any): ...any
 	local finished = false
-	local callbackThread
-	local invokeThread
-	local result
+	local callbackThread: thread = nil
+	local invokeThread: thread = nil
+	local result: table = nil
 
-	local function finish(...)
-		if not finished then
+	-- Saves the results and resumes thread.
+	local function finish(...: any)
+		if finished == false then
 			finished = true
 			result = table.pack(...)
 
@@ -184,20 +197,16 @@ function SafeInvokeCallback(handler: table, ...: any)
 		end
 	end
 
-	task.spawn(function(...)
+	task.spawn(function(...: any)
 		callbackThread = coroutine.running()
 		finish(true, handler.Callback(...))
 	end, ...)
-	--FastSpawn(function(...)
-	--	callbackThread = coroutine.running()
-	--	finish(true, handler.Callback(...))
-	--end, ...)
 
-	if not finished then
+	if finished == false then
 		local client = IsServer and (...)
 
 		task.spawn(function()
-			while not finished and coroutine.status(callbackThread) ~= "dead" do
+			while finished == false and coroutine.status(callbackThread) ~= "dead" do
 				if IsServer and client.Parent ~= Players then
 					break
 				end
@@ -209,7 +218,7 @@ function SafeInvokeCallback(handler: table, ...: any)
 		end)
 	end
 
-	if not finished then
+	if finished == false then
 		invokeThread = coroutine.running()
 		YieldThread()
 	end
@@ -217,22 +226,25 @@ function SafeInvokeCallback(handler: table, ...: any)
 	return unpack(result)
 end
 
-function SafeInvoke(timeout: number, handler: table, ...: any)
+--[[
+	Safely invokes to a client with a possible timeout
+
+	@yields
+]]
+function SafeInvoke(timeout: number?, handler: table, ...: any)
 	local thread = coroutine.running()
 	local finished = false
-	local result
+	local result: table = nil
 
 	task.spawn(function(...: any)
 		if IsServer then
 			result = table.pack(
 				pcall(handler.Remote.InvokeClient, handler.Remote, ...)
 			)
-			--result = table.pack(pcall(function(...) return handler.Remote:InvokeClient(...) end, ...))
 		else
 			result = table.pack(
 				pcall(handler.Remote.InvokeServer, handler.Remote, ...)
 			)
-			--result = table.pack(pcall(function(...) return handler.Remote:InvokeServer(...) end, ...))
 		end
 
 		if finished == false then
@@ -243,7 +255,7 @@ function SafeInvoke(timeout: number, handler: table, ...: any)
 
 	if typeof(timeout) == "number" then
 		task.delay(timeout, function()
-			if not finished then
+			if finished == false then
 				finished = true
 				ResumeThread(thread)
 			end
@@ -259,19 +271,24 @@ function SafeInvoke(timeout: number, handler: table, ...: any)
 	return false
 end
 
+--[[
+	Goes through all callbacks in the handler and runs them with the given argument.
+
+	@yields
+]]
 function SafeFireEvent(handler: table, ...: any)
-	local callbacks = handler.Callbacks
+	local callbacks: {(...any) -> ()} = handler.Callbacks
 	local index = #callbacks
 
 	while index > 0 do
 		local running = true
 
-		task.spawn(function(...)
+		task.spawn(function(...:any)
 			while running == true and index > 0 do
-				local func = callbacks[index]
+				local callback = callbacks[index]
 				index -= 1
 
-				func(...)
+				callback(...)
 			end
 		end, ...)
 
@@ -279,7 +296,14 @@ function SafeFireEvent(handler: table, ...: any)
 	end
 end
 
--- Regular :WaitForChild had issues with order (RemoteEvents were going through before WaitForChild resumed)
+
+--[[
+	Waits for the child with infinite yield.
+
+	Regular WaitForChild had issues with order (RemoteEvents were going through before WaitForChild resumed)
+
+	@yields
+]]
 function WaitForChild(parent: Instance, name: string): Instance
 	local found = parent:FindFirstChild(name)
 
@@ -301,21 +325,23 @@ function WaitForChild(parent: Instance, name: string): Instance
 	return found
 end
 
+
 function GetEventHandler(name: string)
-	local handler = EventHandlers[name]
-	if handler then
-		return handler
+	-- Prevents creating the same handler
+	local found = handlers.Events[name]
+	if found then
+		return found
 	end
 
 	local handler = {
 		Name = name,
-		Folder = EventsFolder,
+		Folder = GetCommunications().Events,
 
 		Callbacks = {},
-		IncomingQueueErrored = nil
+		IncomingQueueErrored = false
 	}
 
-	EventHandlers[name] = handler
+	handlers.Events[name] = handler
 
 	if IsServer then
 		local remote = Instance.new("RemoteEvent")
@@ -323,7 +349,6 @@ function GetEventHandler(name: string)
 		remote.Parent = handler.Folder
 
 		handler.Remote = remote
-
 	else
 		task.spawn(function()
 			handler.Queue = {}
@@ -338,12 +363,13 @@ function GetEventHandler(name: string)
 			remote.OnClientEvent:Connect(function(...)
 				if handler.IncomingQueue then
 					if #handler.IncomingQueue >= 2048 then
-						if not handler.IncomingQueueErrored then
+						if handler.IncomingQueueErrored == false then
 							handler.IncomingQueueErrored = true
+							warn("[Grid]: Exhausted remote invocation queue for", remote:GetFullName())
 							task.spawn(error, string.format("Exhausted remote invocation queue for %s", remote:GetFullName()), -1)
 
 							task.delay(1, function()
-								handler.IncomingQueueErrored = nil
+								handler.IncomingQueueErrored = false
 							end)
 						end
 
@@ -352,20 +378,20 @@ function GetEventHandler(name: string)
 						end
 					end
 
-					ReceiveCounter += 1
-					table.insert(handler.IncomingQueue, table.pack(ReceiveCounter, handler, ...))
+					counters.Received += 1
+					table.insert(handler.IncomingQueue, table.pack(counters.Received, handler, ...))
 					return
 				end
 
 				SafeFireEvent(handler, ...)
 			end)
 
-			if not IsStudio then
+			if IsStudio == false then
 				remote.Name = ""
 			end
 
-			for _, fn in pairs(handler.Queue) do
-				fn()
+			for _, callback: () -> () in pairs(handler.Queue) do
+				callback()
 			end
 
 			handler.Queue = nil
@@ -376,20 +402,21 @@ function GetEventHandler(name: string)
 end
 
 function GetFunctionHandler(name: string): table
-	local handler = FunctionHandlers[name]
+	-- Prevents creating the same handler
+	local handler = handlers.Functions[name]
 	if handler then
 		return handler
 	end
 
 	local handler = {
 		Name = name,
-		Folder = FunctionsFolder,
+		Folder = GetCommunications().Functions,
 
 		Callback = nil,
 		IncomingQueueErrored = nil
 	}
 
-	FunctionHandlers[name] = handler
+	handlers.Functions[name] = handler
 
 	if IsServer then
 		local remote = Instance.new("RemoteFunction")
@@ -423,8 +450,8 @@ function GetFunctionHandler(name: string): table
 						end
 					end
 
-					ReceiveCounter += 1
-					local params = table.pack(ReceiveCounter, handler, coroutine.running())
+					counters.Received += 1
+					local params = table.pack(counters.Received, handler, coroutine.running())
 
 					table.insert(handler.IncomingQueue, params)
 					YieldThread()
@@ -465,12 +492,12 @@ function AddToQueue(handler: table, fn: any, doWarn: boolean)
 end
 
 function ExecuteDeferredHandlers()
-	local handlers = DeferredHandlers
+	local oldHandlers = handlers.Deferred
 	local queue = {}
 
-	DeferredHandlers = {}
+	handlers.Deferred = {}
 
-	for handler in pairs(handlers) do
+	for handler in pairs(oldHandlers) do
 		local incoming = handler.IncomingQueue
 
 		handler.IncomingQueue = nil
@@ -613,7 +640,7 @@ function Grid:BindEvents(pre: table?, callbacks: table)
 			end)
 		else
 			if handler.IncomingQueue then
-				DeferredHandlers[handler] = true
+				handlers.Deferred[handler] = true
 			end
 		end
 	end
@@ -644,7 +671,7 @@ function Grid:BindFunctions(pre: table?, callbacks: table)
 			end
 		else
 			if handler.IncomingQueue then
-				DeferredHandlers[handler] = true
+				handlers.Deferred[handler] = true
 			end
 		end
 	end
@@ -824,21 +851,22 @@ if IsServer then
 	end
 
 else
-	BindsFolder.ChildAdded:Connect(function(child)
+	local communications = GetCommunications()
+	communications.Binds.ChildAdded:Connect(function(child)
 		print("Do binds stuff")
 	end)
 
-	EventsFolder.ChildAdded:Connect(function(child)
+	communications.Events.ChildAdded:Connect(function(child)
 		GetEventHandler(child.Name)
 	end)
-	for _,child in pairs(EventsFolder:GetChildren()) do
+	for _,child in pairs(communications.Events:GetChildren()) do
 		GetEventHandler(child.Name)
 	end
 
-	FunctionsFolder.ChildAdded:Connect(function(child)
+	communications.Functions.ChildAdded:Connect(function(child)
 		GetFunctionHandler(child.Name)
 	end)
-	for _,child in ipairs(FunctionsFolder:GetChildren()) do
+	for _,child in ipairs(communications.Functions:GetChildren()) do
 		GetFunctionHandler(child.Name)
 	end
 
