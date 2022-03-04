@@ -4,42 +4,42 @@
 	https://devforum.roblox.com/t/-/571258
 
 	-- Server API
-	
-	Network:BindFunctions(functions) 
+
+	Network:BindFunctions(functions)
 	Network:BindEvents(events)
-	
+
 	Network:FireClient(client, name, ...)
 	Network:FireAllClients(name, ...)
 	Network:FireOtherClients(ignoreclient, name, ...)
 	Network:FireOtherClientsWithinDistance(ignoreclient, distance, name, ...)
 	Network:FireAllClientsWithinDistance(position, distance, name, ...)
-	
+
 	Network:InvokeClient(client, name, ...)  (same as below with timeout = 60)
 	Network:InvokeClientWithTimeout(timeout, client, name, ...)
-	
+
 	Network:LogTraffic(duration)
-	
+
 	-- Internal overrideable methods, used for custom AllClients/OtherClients/WithinDistance selectors
-	
+
 	Network:GetPlayers()
 	Network:GetPlayerPosition(player)
-	
+
 	-- Client API
-	
-	Network:BindFunctions(functions) 
-	Network:BindEvents(events) 
-	
+
+	Network:BindFunctions(functions)
+	Network:BindEvents(events)
+
 	Network:FireServer(name, ...)
-	
-	Network:InvokeServer(name, ...) 
+
+	Network:InvokeServer(name, ...)
 	Network:InvokeServerWithTimeout(timeout, name, ...)
-	
-	
-	
+
+
+
 	Notes:
 	- The first return value of InvokeClient (but not InvokeServer) is bool success, which is false if the invocation timed out
 	  or the handler errored.
-	
+
 	- InvokeServer will error if it times out or the handler errors
 
 	- InvokeServer/InvokeClient do not return instantly on an error, but instead check for failure every 0.5 seconds. This is
@@ -66,7 +66,7 @@ local function GetParamString(...: any)
 	local tab = table.pack(...)
 	local n = math.min(10, tab.n)
 
-	for index = 1, n do 
+	for index = 1, n do
 		local value = tab[index]
 		local valueType = typeof(tab[index])
 
@@ -825,8 +825,8 @@ else
 	BindsFolder.ChildAdded:Connect(function(child)
 		print("Do binds stuff")
 	end)
-	
-	EventsFolder.ChildAdded:Connect(function(child) 
+
+	EventsFolder.ChildAdded:Connect(function(child)
 		GetEventHandler(child.Name)
 	end)
 	for _,child in pairs(EventsFolder:GetChildren()) do
@@ -1024,7 +1024,7 @@ do
 		CharacterPart = {}
 	}
 
-	local References = {} 
+	local References = {}
 	local Objects = {}
 
 	for i,v in pairs(ReferenceTypes) do
