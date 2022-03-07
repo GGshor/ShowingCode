@@ -44,7 +44,7 @@
 
 	- InvokeServer/InvokeClient do not return instantly on an error, but instead check for failure every 0.5 seconds. This is
 	  because it is not possible to both instantly detect errors and have them be logged in the output with full stacktraces.
---]]
+]]
 
 
 --// Services
@@ -55,6 +55,7 @@ local Players = game:GetService("Players")
 
 --// Constants
 local Grid = {}
+local KickTemplate = "\n[Grid]\n%s"
 local IsStudio = RunService:IsStudio()
 local IsServer = RunService:IsServer()
 local IsClient = RunService:IsClient()
@@ -103,8 +104,34 @@ local function GetParamString(...: any): string
 	return table.concat(packed, ", ", 1, minimum ) .. (packed.n > minimum  and string.format(", ... (%d more)", packed.n - minimum ) or "")
 end
 
--- Waits for communication folders to exist or creates them.
--- @yields
+--[[
+	Adds a prefix to prints
+]]
+local function debugPrint(...)
+	print("[Grid]:", ...)
+end
+
+--[[
+	Adds a prefix to warnings
+]]
+local function debugWarn(...)
+	warn("[Grid]:", ...)
+end
+
+--[[
+	Throws an error without halting script
+]]
+local function debugError(...)
+	for _, msg in pairs({...}) do
+		task.spawn(error, "[GRID]: " .. tostring(msg), -1)
+	end
+end
+
+--[[
+	Waits for communication folders to exist or creates them.
+
+ 	YIELDS
+]]
 local function GetCommunications()
 	if IsServer then
 		-- Stops duplicates and destroys them
@@ -153,7 +180,7 @@ end
 --[[
 	Yields a thread.
 
-	@yields
+ 	YIELDS
 ]]
 function YieldThread(): any
 	-- needed a way to first call coroutine.yield(), and then call YieldBindable.Event:Wait()
@@ -177,7 +204,7 @@ end
 
 	Fail state is only checked every 0.5 seconds, so don't expect errors to return immediately
 
-	@yields
+ 	YIELDS
 ]]
 function SafeInvokeCallback(handler: table, ...: any): ...any
 	local finished = false
@@ -229,15 +256,15 @@ end
 --[[
 	Safely invokes to a client with a possible timeout
 
-	@yields
+ 	YIELDS
 ]]
-function SafeInvoke(timeout: number?, handler: table, ...: any)
+function SafeInvoke(timeout: number?, handler: table, ...: any): (boolean, ...any?)
 	local thread = coroutine.running()
 	local finished = false
 	local result: table = nil
 
 	task.spawn(function(...: any)
-		if IsServer then
+		if IsServer == true then
 			result = table.pack(
 				pcall(handler.Remote.InvokeClient, handler.Remote, ...)
 			)
@@ -274,7 +301,7 @@ end
 --[[
 	Goes through all callbacks in the handler and runs them with the given argument.
 
-	@yields
+ 	YIELDS
 ]]
 function SafeFireEvent(handler: table, ...: any)
 	local callbacks: {(...any) -> ()} = handler.Callbacks
@@ -302,7 +329,7 @@ end
 
 	Regular WaitForChild had issues with order (RemoteEvents were going through before WaitForChild resumed)
 
-	@yields
+ 	YIELDS
 ]]
 function WaitForChild(parent: Instance, name: string): Instance
 	local found = parent:FindFirstChild(name)
@@ -325,7 +352,11 @@ function WaitForChild(parent: Instance, name: string): Instance
 	return found
 end
 
+--[[
+	Searches for the event handler and makes one if it doesn't exists yet.
 
+ 	YIELDS
+]]
 function GetEventHandler(name: string)
 	-- Prevents creating the same handler
 	local found = handlers.Events[name]
@@ -365,8 +396,8 @@ function GetEventHandler(name: string)
 					if #handler.IncomingQueue >= 2048 then
 						if handler.IncomingQueueErrored == false then
 							handler.IncomingQueueErrored = true
-							warn("[Grid]: Exhausted remote invocation queue for", remote:GetFullName())
-							task.spawn(error, string.format("Exhausted remote invocation queue for %s", remote:GetFullName()), -1)
+							debugWarn("Exhausted remote invocation queue for", remote:GetFullName())
+							-- debugError(("Exhausted remove invocation queue for %s"):format(remote:GetFullName()))
 
 							task.delay(1, function()
 								handler.IncomingQueueErrored = false
@@ -401,11 +432,16 @@ function GetEventHandler(name: string)
 	return handler
 end
 
+--[[
+	Searches for the function handler and makes one if it doesn't exists yet.
+
+ 	YIELDS
+]]
 function GetFunctionHandler(name: string): table
 	-- Prevents creating the same handler
-	local handler = handlers.Functions[name]
-	if handler then
-		return handler
+	local foundHandler = handlers.Functions[name]
+	if foundHandler then
+		return foundHandler
 	end
 
 	local handler = {
@@ -438,6 +474,8 @@ function GetFunctionHandler(name: string): table
 					if #handler.IncomingQueue >= 2048 then
 						if not handler.IncomingQueueErrored then
 							handler.IncomingQueueErrored = true
+							
+							debugError(("Exhausted remote invocation"))
 							task.spawn(error, string.format("Exhausted remote invocation queue for %s", remote:GetFullName()), -1)
 
 							task.delay(1, function()
@@ -464,8 +502,8 @@ function GetFunctionHandler(name: string): table
 				remote.Name = ""
 			end
 
-			for _,fn in pairs(handler.Queue) do
-				fn()
+			for _, callback: () -> () in pairs(handler.Queue) do
+				callback()
 			end
 
 			handler.Queue = nil
@@ -475,22 +513,32 @@ function GetFunctionHandler(name: string): table
 	return handler
 end
 
-function AddToQueue(handler: table, fn: any, doWarn: boolean)
+--[[
+	Searches for the event handler and makes one if it doesn't exists yet.
+
+ 	YIELDS
+]]
+function AddToQueue(handler: table, callback: () -> (), doWarn: boolean)
 	if handler.Remote then
-		return fn()
+		return callback()
 	end
 
-	handler.Queue[#handler.Queue + 1] = fn
+	handler.Queue[#handler.Queue + 1] = callback
 
 	if doWarn == true then
 		task.delay(5, function()
 			if not handler.Remote then
-				warn(debug.traceback(("Infinite yield possible on '%s:WaitForChild(\"%s\")'"):format(handler.Folder:GetFullName(), handler.Name)))
+				debugWarn(debug.traceback(("Infinite yield possible on '%s:WaitForChild(\"%s\")'"):format(handler.Folder:GetFullName(), handler.Name)))
 			end
 		end)
 	end
 end
 
+--[[
+	Runs all the deffered handlers.
+
+ 	YIELDS
+]]
 function ExecuteDeferredHandlers()
 	local oldHandlers = handlers.Deferred
 	local queue = {}
@@ -520,7 +568,13 @@ function ExecuteDeferredHandlers()
 	end
 end
 
+--[[
+	Part of the module shared with client and server
+]]
 local Middleware = {
+	--[[
+		Matches parameters
+	]]
 	MatchParams = function(name: string, paramTypes: table)
 		paramTypes = { table.unpack(paramTypes) }
 		local paramStart = 1
@@ -531,8 +585,8 @@ local Middleware = {
 			local dict = {}
 			local typeListString = ""
 
-			for _,v in pairs(list) do
-				local typeString = v:gsub("^%s+", ""):gsub("%s+$", "")
+			for _, parameter: string in pairs(list) do
+				local typeString = parameter:gsub("^%s+", ""):gsub("%s+$", "")
 
 				typeListString ..= (#typeListString > 0 and " or " or "") .. typeString
 				dict[typeString:lower()] = true
@@ -542,16 +596,16 @@ local Middleware = {
 			paramTypes[index] = dict
 		end
 
-		if IsServer then
+		if IsServer == true then
 			paramStart = 2
 			table.insert(paramTypes, 1, false)
 		end
 
-		local function MatchParams(fn, ...)
+		local function MatchParams(callback: () -> (), ...)
 			local params = table.pack(...)
 
 			if params.n > #paramTypes then
-				if IsStudio then
+				if IsStudio == true then
 					warn(("[Network] Invalid number of parameters to %s (%s expected, got %s)"):format(name, #paramTypes - paramStart + 1, params.n - paramStart + 1))
 				end
 				return
@@ -569,19 +623,22 @@ local Middleware = {
 				end
 			end
 
-			return fn(...)
+			return callback(...)
 		end
 
 		return MatchParams
 	end
 }
 
-function combineFn(handler, final, ...)
+--[[
+	Combines handler with a callback and logs it if loggingNetwork exists
+]]
+function combineFunctions(handler, finalCallback: {()-> ()}|() -> (), ...)
 	local middleware = { ... }
 
-	if typeof(final) == "table" then
-		local info = final
-		final = final[1]
+	if typeof(finalCallback) == "table" then
+		local info = finalCallback
+		finalCallback = finalCallback[1]
 
 		if info.MatchParams then
 			table.insert(middleware, Middleware.MatchParams(handler.Name, info.MatchParams))
@@ -589,15 +646,15 @@ function combineFn(handler, final, ...)
 	end
 
 	local function NetworkHandler(...)
-		if LoggingNetwork then
+		if loggingNetwork then
 			local client = ...
 
-			table.insert(LoggingNetwork[client][handler.Remote].dataIn, GetParamString(select(2, ...)))
+			table.insert(loggingNetwork[client][handler.Remote].dataIn, GetParamString(select(2, ...)))
 		end
 
 		local currentIndex = 1
 
-		local function runMiddleware(index, ...)
+		local function runMiddleware(index: number, ...)
 			if index ~= currentIndex then
 				return
 			end
@@ -612,7 +669,7 @@ function combineFn(handler, final, ...)
 				)
 			end
 
-			return final(...)
+			return finalCallback(...)
 		end
 
 		return runMiddleware(1, ...)
@@ -621,20 +678,25 @@ function combineFn(handler, final, ...)
 	return NetworkHandler
 end
 
-function Grid:BindEvents(pre: table?, callbacks: table)
+--[[
+	Binds callbacks to event
+
+ 	YIELDS
+]]
+function Grid:BindEvents(pre: table?, callbacks: {[string]: () -> ()})
 	if typeof(pre) == "table" then
 		pre, callbacks = nil, pre
 	end
 
-	for name: string, fn: any in pairs(callbacks) do
+	for name: string, callback: () -> () in pairs(callbacks) do
 		local handler = GetEventHandler(name)
 		if not handler then
-			error(("Tried to bind callback to non-existing RemoteEvent %q"):format(name))
+			error(("[Grid]: Tried to bind callback to non-existing RemoteEvent %q"):format(name))
 		end
 
-		handler.Callbacks[#handler.Callbacks + 1] = combineFn(handler, fn, pre)
+		handler.Callbacks[#handler.Callbacks + 1] = combineFunctions(handler, callback, pre)
 
-		if IsServer then
+		if IsServer == true then
 			handler.Remote.OnServerEvent:Connect(function(...)
 				SafeFireEvent(handler, ...)
 			end)
@@ -648,22 +710,27 @@ function Grid:BindEvents(pre: table?, callbacks: table)
 	ExecuteDeferredHandlers()
 end
 
-function Grid:BindFunctions(pre: table?, callbacks: table)
+--[[
+	Binds callbacks to function
+
+ 	YIELDS
+]]
+function Grid:BindFunctions(pre: table?, callbacks: {[string]: () -> ()})
 	if typeof(pre) == "table" then
 		pre, callbacks = nil, pre
 	end
 
-	for name: string, fn: any in pairs(callbacks) do
+	for name: string, callback: () -> () in pairs(callbacks) do
 		local handler = GetFunctionHandler(name)
 		if not handler then
-			error(("Tried to bind callback to non-existing RemoteFunction %q"):format(name))
+			error(("[Grid]: Tried to bind callback to non-existing RemoteFunction %q"):format(name))
 		end
 
 		if handler.Callback then
-			error(("Tried to bind multiple callbacks to the same RemoteFunction (%s)"):format(handler.Remote:GetFullName()))
+			error(("[Grid]: Tried to bind multiple callbacks to the same RemoteFunction (%s)"):format(handler.Remote:GetFullName()))
 		end
 
-		handler.Callback = combineFn(handler, fn, pre)
+		handler.Callback = combineFunctions(handler, callback, pre)
 
 		if IsServer then
 			handler.Remote.OnServerInvoke = function(...)
@@ -679,125 +746,167 @@ function Grid:BindFunctions(pre: table?, callbacks: table)
 	ExecuteDeferredHandlers()
 end
 
---
 
 
-if IsServer then
+if IsServer == true then
 	function HandlerFireClient(handler, client, ...)
-		if LoggingNetwork then
-			table.insert(LoggingNetwork[client][handler.Remote].dataOut, GetParamString(...))
+		if loggingNetwork then
+			table.insert(loggingNetwork[client][handler.Remote].dataOut, GetParamString(...))
 		end
 
 		return handler.Remote:FireClient(client, ...)
 	end
 
-	--
-
-	function Grid:GetPlayers()
+	--[[
+		Returns all players
+	]]
+	function Grid:GetPlayers(): {Player}
 		return Players:GetPlayers()
 	end
 
-	function Grid:GetPlayerPosition(player)
+	--[[
+		Returns player's position, can be nil
+	]]
+	function Grid:GetPlayerPosition(player: Player): Vector3?
 		return player and player.Character and player.Character.PrimaryPart and player.Character.PrimaryPart.Position or nil
 	end
 
-	--
-
-	function Grid:FireClient(client, name, ...)
-		local handler = GetEventHandler(name)
+	--[[
+		Fires to a single client
+	]]
+	function Grid:FireClient(client: Player, event: string, ...: any)
+		local handler = GetEventHandler(event)
 		if not handler then
-			error(("'%s' is not a valid RemoteEvent"):format(name))
+			error(("[Grid]: '%s' is not a valid RemoteEvent"):format(event))
 		end
 
 		HandlerFireClient(handler, client, ...)
 	end
 
-	function Grid:FireAllClients(name, ...)
-		local handler = GetEventHandler(name)
+	--[[
+		Fires to every client in the server
+	]]
+	function Grid:FireAllClients(event: string, ...)
+		local handler = GetEventHandler(event)
 		if not handler then
-			error(("'%s' is not a valid RemoteEvent"):format(name))
+			error(("[Grid]: '%s' is not a valid RemoteEvent"):format(event))
 		end
 
-		for i,v in pairs(self:GetPlayers()) do
-			HandlerFireClient(handler, v, ...)
+		for _, player: Player in pairs(self:GetPlayers()) do
+			HandlerFireClient(handler, player, ...)
 		end
 	end
 
-	function Grid:FireOtherClients(client, name, ...)
-		local handler = GetEventHandler(name)
+	--[[
+		Fires to every client except given one
+	]]
+	function Grid:FireOtherClients(exceptClient: Player, event, ...)
+		local handler = GetEventHandler(event)
 		if not handler then
-			error(("'%s' is not a valid RemoteEvent"):format(name))
+			error(("[Grid]: '%s' is not a valid RemoteEvent"):format(event))
 		end
 
-		for i,v in pairs(self:GetPlayers()) do
-			if v ~= client then
-				HandlerFireClient(handler, v, ...)
+		for _, player: Player in pairs(self:GetPlayers()) do
+			if player ~= exceptClient then
+				HandlerFireClient(handler, player, ...)
 			end
 		end
 	end
 
-	function Grid:FireOtherClientsWithinDistance(client, dist, name, ...)
-		local handler = GetEventHandler(name)
+	--[[
+		Fires to every client with in a given radius from one client.
+
+		Does not fire to client being checked from
+	]]
+	function Grid:FireOtherClientsWithinDistance(client: Player, maxDistance: number, event: string, ...)
+		local handler = GetEventHandler(event)
 		if not handler then
-			error(("'%s' is not a valid RemoteEvent"):format(name))
+			error(("[Grid]: '%s' is not a valid RemoteEvent"):format(event))
 		end
 
-		local pos = self:GetPlayerPosition(client)
-		if not pos then
+		local clientPosition = self:GetPlayerPosition(client)
+		if not clientPosition then
 			return
 		end
 
-		for _,player in pairs(self:GetPlayers()) do
+		for _, player: Player in pairs(self:GetPlayers()) do
 			if player ~= client then
-				local otherPos = self:GetPlayerPosition(player)
+				local otherClientPosition = self:GetPlayerPosition(player)
 
-				if otherPos and (pos - otherPos).Magnitude <= dist then
+				if otherClientPosition and (clientPosition - otherClientPosition).Magnitude <= maxDistance then
 					HandlerFireClient(handler, player, ...)
 				end
 			end
 		end
 	end
 
-	function Grid:FireAllClientsWithinDistance(pos, dist, name, ...)
-		local handler = GetEventHandler(name)
+	--[[
+		Fires to every client with in the a radius from given position
+	]]
+	function Grid:FireAllClientsWithinDistance(position: Vector3, maxDistance: number, event: string, ...)
+		local handler = GetEventHandler(event)
 		if not handler then
-			error(("'%s' is not a valid RemoteEvent"):format(name))
+			error(("[Grid]: '%s' is not a valid RemoteEvent"):format(event))
 		end
 
-		for _,player in pairs(self:GetPlayers()) do
-			local otherPos = self:GetPlayerPosition(player)
+		for _, player: Player in pairs(self:GetPlayers()) do
+			local playerPosition = self:GetPlayerPosition(player)
 
-			if otherPos and (pos - otherPos).Magnitude <= dist then
+			if playerPosition and (position - playerPosition).Magnitude <= maxDistance then
 				HandlerFireClient(handler, player, ...)
 			end
 		end
 	end
 
-	function Grid:InvokeClientWithTimeout(timeout, client, name, ...)
-		local handler = GetEventHandler(name)
+	--[[
+		Invokes client with with a custom timeout, returns false if it failed.
+
+	 	YIELDS
+	]]
+	function Grid:InvokeClientWithTimeout(timeout: number, client: Player, event: string, ...): (boolean, any?)
+		local handler = GetEventHandler(event)
 		if not handler then
-			error(("'%s' is not a valid RemoteEvent"):format(name))
+			error(("[Grid]: '%s' is not a valid RemoteEvent"):format(event))
 		end
 
 		return SafeInvoke(timeout, handler, client, ...)
 	end
 
-	function Grid:InvokeClient(...)
-		return self:InvokeClientWithTimeout(60, ...)
+	--[[
+		Invokes client with a 60 seconds timeout
+
+	 	YIELDS
+	]]
+	function Grid:InvokeClient(client: Player, event: string)
+		return self:InvokeClientWithTimeout(60, client, event)
 	end
 
-
-	function Grid:LogTraffic(...)
-		task.spawn(self.LogTrafficAsync, self, ...)
+	--[[
+		Logs grid traffic with possible output but doesn't yield
+	]]
+	function Grid:LogTraffic(duration: number, shouldOutput: boolean)
+		task.spawn(self.LogTrafficAsync, self, duration, shouldOutput)
 	end
 
-	function Grid:LogTrafficAsync(duration, output)
-		output = output or warn
+	--[[
+		Logs grid traffic with possible output
 
-		if LoggingNetwork then return end
+	 	YIELDS
+	]]
+	function Grid:LogTrafficAsync(duration: number, shouldOutput: boolean)
+		--[[
+			Debug output
+		]]
+		local function output(...)
+			if shouldOutput == true then
+				debugWarn(...)
+			end
+		end
+
+		if loggingNetwork then return end
 		output("Logging Network Traffic...")
 
-		LoggingNetwork = setmetatable({}, { __index = function(t, i)
+		loggingNetwork = setmetatable({}, { __index = function(t, i)
 			t[i] = setmetatable({}, { __index = function(t, i) t[i] = { dataIn = {}, dataOut = {} } return t[i] end })
 			return t[i]
 		end})
@@ -806,14 +915,14 @@ if IsServer then
 		task.wait(duration)
 		local effDur = os.clock() - start
 
-		local clientTraffic = LoggingNetwork
-		LoggingNetwork = nil
+		local clientTraffic = loggingNetwork
+		loggingNetwork = nil
 
-		for player,remotes in pairs(clientTraffic) do
+		for player: Player, remotes in pairs(clientTraffic) do
 			local totalReceived = 0
 			local totalSent = 0
 
-			for remote,data in pairs(remotes) do
+			for _, data in pairs(remotes) do
 				totalReceived += #data.dataIn
 				totalSent += #data.dataOut
 			end
@@ -823,27 +932,27 @@ if IsServer then
 			for remote,data in pairs(remotes) do
 				-- Incoming
 
-				local list = data.dataIn
-				if #list > 0 then
-					output(string.format("   %s %s: %d (%.2f/s)", "FireServer", remote.Name, #list, #list / effDur))
+				local listIn = data.dataIn
+				if #listIn > 0 then
+					output(string.format("   %s %s: %d (%.2f/s)", "FireServer", remote.Name, #listIn, #listIn / effDur))
 
-					local count = math.min(#list, 3)
+					local count = math.min(#listIn, 3)
 					for i = 1, count do
-						local index = math.floor(1 + (i - 1) / math.max(1, count - 1) * (#list - 1) + 0.5)
-						output(string.format("      %d: %s", index, list[index]))
+						local index = math.floor(1 + (i - 1) / math.max(1, count - 1) * (#listIn - 1) + 0.5)
+						output(string.format("      %d: %s", index, listIn[index]))
 					end
 				end
 
 				-- Outgoing
 
-				local list = data.dataOut
-				if #list > 0 then
-					output(string.format("   %s %s: %d (%.2f/s)", "FireClient", remote.Name, #list, #list / effDur))
+				local listOut = data.dataOut
+				if #listOut > 0 then
+					output(string.format("   %s %s: %d (%.2f/s)", "FireClient", remote.Name, #listOut, #listOut / effDur))
 
-					local count = math.min(#list, 3)
+					local count = math.min(#listOut, 3)
 					for i = 1, count do
-						local index = math.floor(1 + (i - 1) / math.max(1, count - 1) * (#list - 1) + 0.5)
-						output(string.format("      %d: %s", index, list[index]))
+						local index = math.floor(1 + (i - 1) / math.max(1, count - 1) * (#listOut - 1) + 0.5)
+						output(string.format("      %d: %s", index, listOut[index]))
 					end
 				end
 			end
@@ -870,12 +979,13 @@ else
 		GetFunctionHandler(child.Name)
 	end
 
-	--
-
-	function Grid:FireServer(name, ...)
-		local handler = GetEventHandler(name)
+	--[[
+		Fires to server
+	]]
+	function Grid:FireServer(event: string, ...)
+		local handler = GetEventHandler(event)
 		if not handler then
-			error(("'%s' is not a valid RemoteEvent"):format(name))
+			error(("[Grid]: '%s' is not a valid RemoteEvent"):format(event))
 		end
 
 		if handler.Remote then
@@ -889,10 +999,15 @@ else
 		end
 	end
 
-	function Grid:InvokeServerWithTimeout(timeout, name, ...)
-		local handler = GetFunctionHandler(name)
+	--[[
+		Invoke server with custom timeout
+
+	 	YIELDS
+	]]
+	function Grid:InvokeServerWithTimeout(timeout: number, event: string, ...): ...any
+		local handler = GetFunctionHandler(event)
 		if not handler then
-			error(("'%s' is not a valid RemoteFunction"):format(name))
+			error(("[Grid]: '%s' is not a valid RemoteFunction"):format(event))
 		end
 
 		if not handler.Remote then
@@ -914,8 +1029,11 @@ else
 		return unpack(result, 2)
 	end
 
-	function Grid:InvokeServer(name, ...)
-		return self:InvokeServerWithTimeout(nil, name, ...)
+	--[[
+		Invokes server without timeout
+	]]
+	function Grid:InvokeServer(event: string, ...): ...any
+		return self:InvokeServerWithTimeout(nil, event, ...)
 	end
 end
 
@@ -929,19 +1047,30 @@ do
 	local CacheSize = 32 -- must be under 256, keeping it low because adding a new entry goes through the entire cache
 
 	local ValidTypes = {
-		"number", "string", "boolean", "nil",
-		"Vector2", "Vector3", "CFrame",
-		"Color3", "BrickColor",
-		"UDim2", "UDim"
+		["number"] = true,
+		["string"] = true,
+		["boolean"] = true,
+		["nil"] = true,
+
+		["Vector2"] = true,
+		["Vector3"] = true,
+		["CFrame"] = true,
+
+		["Color3"] = true,
+		["BrickColor"] = true,
+
+		["Udim2"] = true,
+		["Udim"] = true
 	}
 
-	for i,v in ipairs(ValidTypes) do ValidTypes[v] = true end
-
-	local function addEntry(value, client)
+	--[[
+		Makes value one byte and adds it to cache if it was not added
+	]]
+	local function addEntry(value: any, client: Player)
 		local valueType = typeof(value)
 
 		if not ValidTypes[valueType] then
-			error(string.format("Invalid value passed to Grid:Pack (values of type %s are not supported)", valueType))
+			error(string.format("[Grid]: Invalid value passed to Grid:Pack (values of type %s are not supported)", valueType))
 		end
 
 		if valueType == "boolean" or valueType == "nil" or value == "" then
@@ -973,7 +1102,7 @@ do
 				info.value = value
 			end
 
-			if IsServer then
+			if IsServer == true then
 				Grid:FireClient(client, "SetPackedValue", info.char, info.value)
 			else
 				Grid:FireServer("SetPackedValue", info.char, info.value)
@@ -985,7 +1114,10 @@ do
 		return info.char
 	end
 
-	local function getEntry(value, client)
+	--[[
+		Gets an entry from the receiving cache
+	]]
+	local function getEntry(value: any, client: Player)
 		local valueType = typeof(value)
 		if valueType ~= "string" or value == "" then
 			return value
@@ -999,31 +1131,38 @@ do
 		return ReceivingCache[client][index]
 	end
 
-	if IsServer then
-		function Grid:Pack(value, client)
-			assert(typeof(client) == "Instance" and client:IsA("Player"), "client is not a player")
+	if IsServer == true then
+
+		--[[
+			Packs a value and adds it to the cache
+		]]
+		function Grid:Pack(value: any, client: Player)
+			assert(typeof(client) == "Instance" and client:IsA("Player"), "[Grid]: Client is not a player")
 			return addEntry(value, client)
 		end
 
-		function Grid:Unpack(value, client)
-			assert(typeof(client) == "Instance" and client:IsA("Player"), "client is not a player")
+		--[[
+			Unpacks the value
+		]]
+		function Grid:Unpack(value: any, client: Player)
+			assert(typeof(client) == "Instance" and client:IsA("Player"), "[Grid]: Client is not a player")
 			return getEntry(value, client)
 		end
 
 		Grid:BindEvents({
-			SetPackedValue = function(client, char, value)
+			SetPackedValue = function(client: Player, char: string?, value: any)
 				if typeof(char) ~= "string" or #char ~= 1 then
-					return client:Kick()
+					return client:Kick(KickTemplate:format("Expected string, got " .. tostring(char)))
 				end
 
 				local index = string.byte(char)
 				if index < 1 or index > CacheSize then
-					return client:Kick()
+					return client:Kick(KickTemplate:format("index too small or too big for cache"))
 				end
 
 				local valueType = typeof(value)
 				if not ValidTypes[valueType] or valueType == "string" and #value > MaxStringLength then
-					return client:Kick()
+					return client:Kick(KickTemplate:format("Non valid value type"))
 				end
 
 				ReceivingCache[client][index] = value
@@ -1050,103 +1189,116 @@ end
 
 do
 	local ReferenceTypes = {
-		Character = {},
-		CharacterPart = {}
+		["Character"] = {},
+		["CharacterPart"] = {}
 	}
 
 	local References = {}
 	local Objects = {}
 
-	for i,v in pairs(ReferenceTypes) do
-		References[i] = {}
-		Objects[i] = {}
+	for index: string, _ in pairs(ReferenceTypes) do
+		References[index] = {}
+		Objects[index] = {}
 	end
 
-	function Grid:AddReference(key, refType, ...)
-		local refInfo = ReferenceTypes[refType]
-		assert(refInfo, "Invalid Reference Type")
+	--[[
+		Adds a reference for client
+	]]
+	function Grid:AddReference(key: string, referenceType: string, ...)
+		local referenceInfo = ReferenceTypes[referenceType]
+		assert(referenceInfo, "Invalid Reference Type " .. tostring(referenceType))
 
-		local refData = {
-			Type = refType,
+ 		local referenceData = {
+			Type = referenceType,
 			Reference = key,
 			Objects = {...},
 			Aliases = {}
 		}
 
-		References[refType][refData.Reference] = refData
+		References[referenceType][referenceData.Reference] = referenceData
 
-		local last = Objects[refType]
-		for _,obj in ipairs(refData.Objects) do
+		local last = Objects[referenceType]
+		for _, obj in ipairs(referenceData.Objects) do
 			local list = last[obj] or {}
 			last[obj] = list
 			last = list
 		end
 
-		last.__Data = refData
+		last.__Data = referenceData
 	end
 
-	function Grid:AddReferenceAlias(key, refType, ...)
-		local refInfo = ReferenceTypes[refType]
-		assert(refInfo, "Invalid Reference Type")
+	--[[
+		Add an alias to a existing reference
+	]]
+	function Grid:AddReferenceAlias(key: string, referenceType: string, ...)
+		local referenceInfo = ReferenceTypes[referenceType]
+		assert(referenceInfo, "Invalid Reference Type " .. tostring(referenceType))
 
-		local refData = References[refType][key]
-		if not refData then
-			warn("Tried to add an alias to a non-existing reference")
+		local referenceData = References[referenceType][key]
+		if not referenceData then
+			debugWarn(("Tried to add an alias to a non-existing reference %s[%s]"):format(tostring(referenceType), tostring(key)))
 			return
 		end
 
 		local objects = {...}
-		refData.Aliases[#refData.Aliases + 1] = objects
+		referenceData.Aliases[#referenceData.Aliases + 1] = objects
 
-		local last = Objects[refType]
+		local last = Objects[referenceType]
 		for _,obj in ipairs(objects) do
 			local list = last[obj] or {}
 			last[obj] = list
 			last = list
 		end
 
-		last.__Data = refData
+		last.__Data = referenceData
 	end
 
-	function Grid:RemoveReference(key, refType)
-		local refInfo = ReferenceTypes[refType]
-		assert(refInfo, "Invalid Reference Type")
+	--[[
+		Removes the reference
+	]]
+	function Grid:RemoveReference(key: string, referenceType: string)
+		local referenceInfo = ReferenceTypes[referenceType]
+		assert(referenceInfo, "Invalid Reference Type " .. tostring(referenceType))
 
-		local refData = References[refType][key]
-		if not refData then
-			warn("Tried to remove a non-existing reference")
+		local referenceData = References[referenceType][key]
+		if not referenceData then
+			debugWarn(("Tried to remove a non-existing reference %s[%s]"):format(tostring(referenceType), tostring(key)))
 			return
 		end
 
-		References[refType][refData.Reference] = nil
+		References[referenceType][referenceData.Reference] = nil
 
-		local function rem(parent, objects, index)
+		-- Removes the data from objects
+		local function remove(parent: {}, objects: {}, index: number)
 			if index <= #objects then
-				local key = objects[index]
-				local child = parent[key]
+				local foundKey = objects[index]
+				local child = parent[foundKey]
 
-				rem(child, objects, index + 1)
+				remove(child, objects, index + 1)
 
 				if next(child) == nil then
 					parent[key] = nil
 				end
-			elseif parent.__Data == refData then
+			elseif parent.__Data == referenceData then
 				parent.__Data = nil
 			end
 		end
 
-		local objects = Objects[refData.Type]
-		rem(objects, refData.Objects, 1)
+		local objects = Objects[referenceData.Type]
+		remove(objects, referenceData.Objects, 1)
 
-		for i,alias in ipairs(refData.Aliases) do
-			rem(objects, alias, 1)
+		for _,alias in ipairs(referenceData.Aliases) do
+			remove(objects, alias, 1)
 		end
 	end
 
-	function Grid:GetObject(ref, refType)
-		assert(ReferenceTypes[refType], "Invalid Reference Type")
+	--[[
+		Gets object from reference
+	]]
+	function Grid:GetObject(reference, referenceType): ...any?
+		assert(ReferenceTypes[referenceType], "Invalid Reference Type " .. tostring(referenceType))
 
-		local refData = References[refType][ref]
+		local refData = References[referenceType][reference]
 		if not refData then
 			return nil
 		end
@@ -1154,13 +1306,16 @@ do
 		return unpack(refData.Objects)
 	end
 
-	function Grid:GetReference(...)
+	--[[
+		Gets reference from objects
+	]]
+	function Grid:GetReference(...): ...any?
 		local objects = {...}
 
-		local refType = table.remove(objects)
-		assert(ReferenceTypes[refType], "Invalid Reference Type")
+		local referenceType = table.remove(objects)
+		assert(ReferenceTypes[referenceType], "Invalid Reference Type " .. tostring(referenceType))
 
-		local last = Objects[refType]
+		local last = Objects[referenceType]
 		for i,v in ipairs(objects) do
 			last = last[v]
 
@@ -1174,6 +1329,6 @@ do
 	end
 end
 
---
+
 
 return Grid
