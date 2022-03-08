@@ -63,7 +63,8 @@ local YieldBindable = Instance.new("BindableEvent")
 
 
 --// Variables
-local loggingNetwork: {} = nil
+local loggingGrid: {} = nil
+local createdCommunications = false
 local handlers = {
 	Events = {},
 	Functions = {},
@@ -133,11 +134,12 @@ end
  	YIELDS
 ]]
 local function GetCommunications()
-	if IsServer then
+	if IsServer == true then
 		-- Stops duplicates and destroys them
-		if ReplicatedStorage:FindFirstChild("GridCommunications") then
+		if ReplicatedStorage:FindFirstChild("GridCommunications") and createdCommunications == false then
 			ReplicatedStorage.Communication:Destroy()
 		end
+		createdCommunications = true
 
 		local CommunicationFolder = Instance.new("Folder")
 		CommunicationFolder.Name = "GridCommunications"
@@ -160,7 +162,7 @@ local function GetCommunications()
 			["Binds"] = BindsFolder
 		}
 
-	elseif IsClient then
+	elseif IsClient == true then
 		local CommunicationFolder = ReplicatedStorage:WaitForChild("GridCommunications")
 		local FunctionsFolder = CommunicationFolder:WaitForChild("Functions")
 		local EventsFolder = CommunicationFolder:WaitForChild("Events")
@@ -182,7 +184,7 @@ end
 
  	YIELDS
 ]]
-function YieldThread(): any
+function YieldThread(): any?
 	-- needed a way to first call coroutine.yield(), and then call YieldBindable.Event:Wait()
 	-- but return what coroutine.yield() returned. This is kinda ugly, but the only other
 	-- option was to create a temporary table to store the results, which I didn't want to do
@@ -357,7 +359,7 @@ end
 
  	YIELDS
 ]]
-function GetEventHandler(name: string)
+function GetEventHandler(name: string): {}
 	-- Prevents creating the same handler
 	local found = handlers.Events[name]
 	if found then
@@ -374,7 +376,7 @@ function GetEventHandler(name: string)
 
 	handlers.Events[name] = handler
 
-	if IsServer then
+	if IsServer == true then
 		local remote = Instance.new("RemoteEvent")
 		remote.Name = handler.Name
 		remote.Parent = handler.Folder
@@ -437,7 +439,7 @@ end
 
  	YIELDS
 ]]
-function GetFunctionHandler(name: string): table
+function GetFunctionHandler(name: string): {}
 	-- Prevents creating the same handler
 	local foundHandler = handlers.Functions[name]
 	if foundHandler then
@@ -454,7 +456,7 @@ function GetFunctionHandler(name: string): table
 
 	handlers.Functions[name] = handler
 
-	if IsServer then
+	if IsServer == true then
 		local remote = Instance.new("RemoteFunction")
 		remote.Name = handler.Name
 		remote.Parent = handler.Folder
@@ -475,8 +477,7 @@ function GetFunctionHandler(name: string): table
 						if not handler.IncomingQueueErrored then
 							handler.IncomingQueueErrored = true
 							
-							debugError(("Exhausted remote invocation"))
-							task.spawn(error, string.format("Exhausted remote invocation queue for %s", remote:GetFullName()), -1)
+							debugError(("Exhausted remote invocation queue for &s"):format(remote:GetFullName()))
 
 							task.delay(1, function()
 								handler.IncomingQueueErrored = nil
@@ -518,14 +519,14 @@ end
 
  	YIELDS
 ]]
-function AddToQueue(handler: table, callback: () -> (), doWarn: boolean)
+function AddToQueue(handler: table, callback: () -> (), shouldOutput: boolean)
 	if handler.Remote then
 		return callback()
 	end
 
 	handler.Queue[#handler.Queue + 1] = callback
 
-	if doWarn == true then
+	if shouldOutput == true then
 		task.delay(5, function()
 			if not handler.Remote then
 				debugWarn(debug.traceback(("Infinite yield possible on '%s:WaitForChild(\"%s\")'"):format(handler.Folder:GetFullName(), handler.Name)))
@@ -575,7 +576,7 @@ local Middleware = {
 	--[[
 		Matches parameters
 	]]
-	MatchParams = function(name: string, paramTypes: table)
+	MatchParams = function(event: string, paramTypes: table)
 		paramTypes = { table.unpack(paramTypes) }
 		local paramStart = 1
 
@@ -606,7 +607,7 @@ local Middleware = {
 
 			if params.n > #paramTypes then
 				if IsStudio == true then
-					warn(("[Network] Invalid number of parameters to %s (%s expected, got %s)"):format(name, #paramTypes - paramStart + 1, params.n - paramStart + 1))
+					debugWarn(("Invalid number of parameters to %s"):format(event, #paramTypes - paramStart + 1, params.n - paramStart + 1))
 				end
 				return
 			end
@@ -617,7 +618,7 @@ local Middleware = {
 
 				if not argExpected[argType:lower()] and not argExpected.any then
 					if IsStudio then
-						warn(("[Network] Invalid parameter %d to %s (%s expected, got %s)"):format(i - paramStart + 1, name, argExpected._string, argType))
+						debugWarn(("Invalid parameter %d to %s (%s expected, got %s)"):format(i - paramStart + 1, event, argExpected._string, argType))
 					end
 					return
 				end
@@ -631,9 +632,9 @@ local Middleware = {
 }
 
 --[[
-	Combines handler with a callback and logs it if loggingNetwork exists
+	Combines handler with a callback and logs it if logging exists
 ]]
-function combineFunctions(handler, finalCallback: {()-> ()}|() -> (), ...)
+function combineFunctions(handler, finalCallback: {()-> ()}|() -> (), ...:any?)
 	local middleware = { ... }
 
 	if typeof(finalCallback) == "table" then
@@ -645,11 +646,11 @@ function combineFunctions(handler, finalCallback: {()-> ()}|() -> (), ...)
 		end
 	end
 
-	local function NetworkHandler(...)
-		if loggingNetwork then
+	local function GridHandler(...)
+		if loggingGrid then
 			local client = ...
 
-			table.insert(loggingNetwork[client][handler.Remote].dataIn, GetParamString(select(2, ...)))
+			table.insert(loggingGrid[client][handler.Remote].dataIn, GetParamString(select(2, ...)))
 		end
 
 		local currentIndex = 1
@@ -675,15 +676,16 @@ function combineFunctions(handler, finalCallback: {()-> ()}|() -> (), ...)
 		return runMiddleware(1, ...)
 	end
 
-	return NetworkHandler
+	return GridHandler
 end
 
+-- TODO: Figure out type arguments for binding events and functions
 --[[
 	Binds callbacks to event
 
  	YIELDS
 ]]
-function Grid:BindEvents(pre: table?, callbacks: {[string]: () -> ()})
+function Grid:BindEvents(pre: {[string]: () -> ()}?, callbacks: {[string]: () -> ()})
 	if typeof(pre) == "table" then
 		pre, callbacks = nil, pre
 	end
@@ -750,8 +752,8 @@ end
 
 if IsServer == true then
 	function HandlerFireClient(handler, client, ...)
-		if loggingNetwork then
-			table.insert(loggingNetwork[client][handler.Remote].dataOut, GetParamString(...))
+		if loggingGrid then
+			table.insert(loggingGrid[client][handler.Remote].dataOut, GetParamString(...))
 		end
 
 		return handler.Remote:FireClient(client, ...)
@@ -903,10 +905,10 @@ if IsServer == true then
 			end
 		end
 
-		if loggingNetwork then return end
-		output("Logging Network Traffic...")
+		if loggingGrid then return end
+		output("Logging Grid Traffic...")
 
-		loggingNetwork = setmetatable({}, { __index = function(t, i)
+		loggingGrid = setmetatable({}, { __index = function(t, i)
 			t[i] = setmetatable({}, { __index = function(t, i) t[i] = { dataIn = {}, dataOut = {} } return t[i] end })
 			return t[i]
 		end})
@@ -915,8 +917,8 @@ if IsServer == true then
 		task.wait(duration)
 		local effDur = os.clock() - start
 
-		local clientTraffic = loggingNetwork
-		loggingNetwork = nil
+		local clientTraffic = loggingGrid
+		loggingGrid = nil
 
 		for player: Player, remotes in pairs(clientTraffic) do
 			local totalReceived = 0
@@ -1309,7 +1311,7 @@ do
 	--[[
 		Gets reference from objects
 	]]
-	function Grid:GetReference(...): ...any?
+	function Grid:GetReference(...): any?
 		local objects = {...}
 
 		local referenceType = table.remove(objects)
