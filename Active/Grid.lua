@@ -68,6 +68,7 @@ local createdCommunications = false
 local handlers = {
 	Events = {},
 	Functions = {},
+	Binds = {},
 	Deferred = {}
 }
 local counters = {
@@ -124,7 +125,7 @@ end
 ]]
 local function debugError(...)
 	for _, msg in pairs({...}) do
-		task.spawn(error, "[GRID]: " .. tostring(msg), -1)
+		task.spawn(error, "[Grid]: " .. tostring(msg), -1)
 	end
 end
 
@@ -137,7 +138,9 @@ local function GetCommunications()
 	if IsServer == true then
 		-- Stops duplicates and destroys them
 		if ReplicatedStorage:FindFirstChild("GridCommunications") and createdCommunications == false then
-			ReplicatedStorage.Communication:Destroy()
+			ReplicatedStorage.Communications:Destroy()
+		elseif createdCommunications == true then
+			return ReplicatedStorage.Communications
 		end
 		createdCommunications = true
 
@@ -693,7 +696,7 @@ function Grid:BindEvents(pre: {[string]: () -> ()}?, callbacks: {[string]: () ->
 	for name: string, callback: () -> () in pairs(callbacks) do
 		local handler = GetEventHandler(name)
 		if not handler then
-			error(("[Grid]: Tried to bind callback to non-existing RemoteEvent %q"):format(name))
+			debugError(("Tried to bind callback to non-existing RemoteEvent %q"):format(name))
 		end
 
 		handler.Callbacks[#handler.Callbacks + 1] = combineFunctions(handler, callback, pre)
@@ -725,11 +728,11 @@ function Grid:BindFunctions(pre: table?, callbacks: {[string]: () -> ()})
 	for name: string, callback: () -> () in pairs(callbacks) do
 		local handler = GetFunctionHandler(name)
 		if not handler then
-			error(("[Grid]: Tried to bind callback to non-existing RemoteFunction %q"):format(name))
+			debugError(("Tried to bind callback to non-existing RemoteFunction %q"):format(name))
 		end
 
 		if handler.Callback then
-			error(("[Grid]: Tried to bind multiple callbacks to the same RemoteFunction (%s)"):format(handler.Remote:GetFullName()))
+			debugError(("Tried to bind multiple callbacks to the same RemoteFunction (%s)"):format(handler.Remote:GetFullName()))
 		end
 
 		handler.Callback = combineFunctions(handler, callback, pre)
@@ -908,8 +911,13 @@ if IsServer == true then
 		if loggingGrid then return end
 		output("Logging Grid Traffic...")
 
-		loggingGrid = setmetatable({}, { __index = function(t, i)
-			t[i] = setmetatable({}, { __index = function(t, i) t[i] = { dataIn = {}, dataOut = {} } return t[i] end })
+		loggingGrid = setmetatable({}, {
+			__index = function(t, i)
+				t[i] = setmetatable({}, {
+				__index = function(t, i)
+					t[i] = { dataIn = {}, dataOut = {} }
+					return t[i]
+				end})
 			return t[i]
 		end})
 
@@ -963,8 +971,8 @@ if IsServer == true then
 
 else
 	local communications = GetCommunications()
-	communications.Binds.ChildAdded:Connect(function(child)
-		print("Do binds stuff")
+	communications.Binds.ChildAdded:Connect(function()
+		debugPrint("Do binds stuff")
 	end)
 
 	communications.Events.ChildAdded:Connect(function(child)
@@ -1092,7 +1100,7 @@ do
 				cache[index] = info
 				cache[value] = info
 			else
-				for i,other in ipairs(cache) do
+				for _,other in ipairs(cache) do
 					if not info or other.last < info.last then
 						info = other
 					end
@@ -1318,7 +1326,7 @@ do
 		assert(ReferenceTypes[referenceType], "Invalid Reference Type " .. tostring(referenceType))
 
 		local last = Objects[referenceType]
-		for i,v in ipairs(objects) do
+		for _,v in ipairs(objects) do
 			last = last[v]
 
 			if not last then
