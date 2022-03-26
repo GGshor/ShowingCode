@@ -19,8 +19,6 @@ local function createIndex(oldTable)
 	return newTable
 end
 
-local sortTable = createIndex -- Because I'm too lazy
-
 function Queue.new(newQueue)
 	local self = {}
 	
@@ -62,7 +60,7 @@ end
 function Queue:add(add)
 	if typeof(add) == "table" then
 		for _,object in pairs(add) do
-			table.insert(self._queue, (#self._queue + 1), add)
+			table.insert(self._queue, (#self._queue + 1), object)
 		end
 	else
 		print(self._queue)
