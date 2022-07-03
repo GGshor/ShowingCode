@@ -1,0 +1,20 @@
+{
+    "name": "Firebase",
+    "tree": {
+        "$className": "DataModel",
+        
+        "ServerScriptService": {
+            "$className": "ServerScriptService",
+
+            "Firebase": {
+                "$path": "./src",
+
+                "$className": "ModuleScript",
+
+                "Promise": {
+                    "$path": "GitModules/Promise/lib"
+                }
+            }
+        }
+    }
+}
